@@ -195,13 +195,16 @@ static int __ashmem_check_failure(int fd, int result) {
 }
 
 static bool is_memfd_fd(int fd) {
-    std::string fd_path = android::base::StringPrintf("/proc/self/fd/%d", fd);
-    std::string result;
-    if (!android::base::Readlink(fd_path, &result)) {
-        ALOGE("readlink(%s) failed: %m", fd_path.c_str());
-        return false;
-    }
-    return result.starts_with("/memfd:");
+    static const dev_t memfd_dev = []() -> dev_t {
+        android::base::unique_fd probe(
+                syscall(__NR_memfd_create, "libcutils_memfd_probe", MFD_CLOEXEC | MFD_ALLOW_SEALING));
+        struct stat st;
+        if (probe == -1 || fstat(probe, &st) == -1) return static_cast<dev_t>(-1);
+        return st.st_dev;
+    }();
+    struct stat st;
+    return memfd_dev != static_cast<dev_t>(-1) && fstat(fd, &st) == 0 && S_ISREG(st.st_mode) &&
+           st.st_dev == memfd_dev && TEMP_FAILURE_RETRY(fcntl(fd, F_GET_SEALS)) != -1;
 }
 
 int ashmem_valid(int fd) {
