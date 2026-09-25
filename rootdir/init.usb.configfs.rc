@@ -1,7 +1,11 @@
+# Keep the platform default: USB function teardown stops adbd. A board that
+# supports independent TCP debugging may override this in a later on-init
+# action. sys.usb.config.* already has the usb_prop property label.
+on init
+    setprop sys.usb.config.stop_adbd 1
+
 on property:sys.usb.config=none && property:sys.usb.configfs=1
     write /config/usb_gadget/g1/UDC "none"
-    stop adbd
-    setprop sys.usb.ffs.ready 0
     write /config/usb_gadget/g1/bDeviceClass 0
     write /config/usb_gadget/g1/bDeviceSubClass 0
     write /config/usb_gadget/g1/bDeviceProtocol 0
@@ -10,6 +14,13 @@ on property:sys.usb.config=none && property:sys.usb.configfs=1
     rm /config/usb_gadget/g1/configs/b.1/f3
     rmdir /config/usb_gadget/g1/functions/rndis.gs4
     setprop sys.usb.state ${sys.usb.config}
+
+# Gadget cleanup above still runs when TCP owns the daemon. Do not clear
+# ffs.ready while that daemon holds valid descriptors (including USB pause):
+# resuming an already-open FunctionFS instance need not publish ready again.
+on property:sys.usb.config=none && property:sys.usb.configfs=1 && property:sys.usb.config.stop_adbd=1
+    stop adbd
+    setprop sys.usb.ffs.ready 0
 
 on property:init.svc.adbd=stopped
     setprop sys.usb.ffs.ready 0
